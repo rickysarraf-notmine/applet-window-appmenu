@@ -1,0 +1,6 @@
+applet-window-appmenu (0.6.0-1) UNRELEASED; urgency=low
+
+  * Initial release. Closes: #nnnn
+    <nnnn is the bug number of your ITP>
+
+ -- Ritesh Raj Sarraf <rrs@debian.org>  Fri, 12 Jun 2020 20:52:19 +0530
