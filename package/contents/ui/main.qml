@@ -49,7 +49,7 @@ Item {
     Plasmoid.status: inFullView ? fullLayout.status : compactLayout.status
 
     //BEGIN Layout properties
-    Layout.fillWidth: inFullView ? true : root.vertical
+    Layout.fillWidth: inFullView && plasmoid.configuration.fillWidth ? true : root.vertical
     Layout.fillHeight: inFullView ? true : !root.vertical
     Layout.minimumWidth: {
         if (inFullView) {
@@ -93,6 +93,7 @@ Item {
             latteBridge.actions.setProperty(plasmoid.id, "latteSideColoringEnabled", false);
             latteBridge.actions.setProperty(plasmoid.id, "activeIndicatorEnabled", false);
             latteBridge.actions.setProperty(plasmoid.id, "windowsTrackingEnabled", true);
+            latteBridge.actions.setProperty(plasmoid.id, "screenEdgeMarginSupported", true);
 
             if (latteBridge.version >= latteBridge.actions.version(0,9,4)) {
                 plasmoid.configuration.supportsActiveWindowSchemes = true;
@@ -103,10 +104,52 @@ Item {
     readonly property bool latteInEditMode: latteBridge && latteBridge.inEditMode
     readonly property bool enforceLattePalette: latteBridge && latteBridge.applyPalette && latteBridge.palette
 
+    readonly property int screenEdgeMargin: latteBridge && latteBridge.hasOwnProperty("screenEdgeMargin") ? latteBridge.screenEdgeMargin : 0
+
     Broadcaster {
         id: broadcaster
     }
     //END  Latte Dock Communicator
+
+    //! make sure that on startup it will always be shown
+    readonly property bool existsWindowActive: (windowInfoLoader.item && windowInfoLoader.item.existsWindowActive)
+                                               || containmentIdentifierTimer.running
+    readonly property bool existsWindowShown: (windowInfoLoader.item && windowInfoLoader.item.existsWindowShown)
+                                              || containmentIdentifierTimer.running
+
+    readonly property bool isLastActiveWindowPinned: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isOnAllDesktops
+    readonly property bool isLastActiveWindowMaximized: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isMaximized
+    readonly property bool isLastActiveWindowKeepAbove: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isKeepAbove
+
+    readonly property bool isLastActiveWindowClosable: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isClosable
+    readonly property bool isLastActiveWindowMaximizable: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isMaximizable
+    readonly property bool isLastActiveWindowMinimizable: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isMinimizable
+    readonly property bool isLastActiveWindowVirtualDesktopsChangeable: lastActiveTaskItem && existsWindowShown && lastActiveTaskItem.isVirtualDesktopsChangeable
+
+    readonly property Item lastActiveTaskItem: windowInfoLoader.item.lastActiveTaskItem
+
+    Loader {
+        id: windowInfoLoader
+        sourceComponent: latteBridge
+                         && latteBridge.windowsTracker
+                         && latteBridge.windowsTracker.currentScreen.lastActiveWindow
+                         && latteBridge.windowsTracker.allScreens.lastActiveWindow ? latteTrackerComponent : plasmaTasksModel
+
+        Component{
+            id: latteTrackerComponent
+            LatteWindowsTracker{
+                filterByScreen: plasmoid.configuration.filterByScreen
+            }
+        }
+
+        Component{
+            id: plasmaTasksModel
+            PlasmaTasksModel{
+                filterByScreen: plasmoid.configuration.filterByScreen
+            }
+        }
+    }
+    // END Window properties
 
     onViewChanged: {
         plasmoid.nativeInterface.view = view;
@@ -133,7 +176,10 @@ Item {
             }
         });
 
-        plasmoid.activated.connect(function () {
+        /*
+          // commented in order to avoid to be activated from Latte neutral areas activation
+
+            plasmoid.activated.connect(function () {
             if (inFullView) {
                 var button = buttonRepeater.itemAt(0);
                 if (button) {
@@ -142,7 +188,7 @@ Item {
             } else {
                 compactLayout.clicked();
             }
-        });
+        });*/
     }
 
     Binding {
@@ -173,6 +219,7 @@ Item {
         anchors.fill: parent
         enabled: menuAvailable
         visible: inCompactView
+        screenEdgeMargin: root.screenEdgeMargin
 
         buttonIndex: 0
         icon: "application-menu"
@@ -226,14 +273,16 @@ Item {
             id: keystateSource
             engine: "keystate"
             connectedSources: ["Alt"]
+
+            readonly property bool modifierIsPressed: data.Alt && data.Alt.Pressed
         }
 
         MouseArea {
             id: fullViewBackMousearea
             anchors.left: gridFlickable.right
-            width: parent.width - gridFlickable.width
+            width: visible ? parent.width - gridFlickable.width : 0 //! zero helps to release containsmouse on first showing
             height: parent.height - 1
-            visible: broadcaster.cooperationEstablished && root.inFullView
+            visible: broadcaster.cooperationEstablished && root.inFullView && (fullLayout.status !== PlasmaCore.Types.HiddenStatus)
                      && plasmoid.configuration.fillWidth && buttonRepeater.count > 0
             hoverEnabled: true
             propagateComposedEvents: true
@@ -263,13 +312,24 @@ Item {
 
                 property int currentIndex: -1
 
+                onCurrentIndexChanged: {
+                    if (currentIndex >= 0 && plasmoid.nativeInterface.menuIsShown) {
+                        //! as it appears this codepath when triggered from buttons entering under x11
+                        //! does not work because the shown menu gets the grabber. So under
+                        //! x11 the applet event filter is responsible for buttons hovering
+                        //! to trigger menus showing but for wayland the qml painted buttons
+                        //! take up the task
+                        plasmoid.nativeInterface.requestActivateIndex(currentIndex);
+                    }
+                }
+
                 readonly property bool containsMouse: {
-                    if (plasmoid.nativeInterface.currentIndex>=0 || fullViewBackMousearea.containsMouse) {
+                    if (currentIndex>=0 || fullViewBackMousearea.containsMouse) {
                         return true;
                     }
 
                     for (var i=0; i<buttonGrid.children.length; ++i) {
-                        if (buttonGrid.children[i] !== buttonRepeater && buttonGrid.children[i].containsMouse) {
+                        if (buttonGrid.children[i] && buttonGrid.children[i] !== buttonRepeater && buttonGrid.children[i].containsMouse) {
                             return true;
                         }
                     }
@@ -305,7 +365,8 @@ Item {
                         visible: activeMenu !== ""
 
                         buttonIndex: index
-                        text: activeMenu
+                        screenEdgeMargin: root.screenEdgeMargin
+                        text: activeMenu                        
 
                         onClicked: {
                             plasmoid.nativeInterface.trigger(this, index);
@@ -313,13 +374,13 @@ Item {
 
                         onScrolledUp: {
                             if (gridFlickable.contentsExceed) {
-                                gridFlickable.increaseX(step);
+                                gridFlickable.decreaseX(step);
                             }
                         }
 
                         onScrolledDown: {
                             if (gridFlickable.contentsExceed) {
-                                gridFlickable.decreaseX(step);
+                                gridFlickable.increaseX(step);
                             }
                         }
                     }
@@ -336,7 +397,7 @@ Item {
 
         //This Loader is to support maximize/restore active window for plasma panels. Latte panels are not and should not be influenced by this implementation
         Loader {
-            active: plasmoid.configuration.fillWidth && plasmoid.configuration.toggleMaximizedOnDoubleClick && containmentType !== 2
+            active: plasmoid.configuration.fillWidth && (plasmoid.configuration.toggleMaximizedOnDoubleClick || plasmoid.configuration.toggleMaximizedOnMouseWheel) && containmentType !== 2
             anchors.fill: parent
             sourceComponent: Component {
                 MouseArea {
@@ -347,11 +408,24 @@ Item {
                     TaskManager.TasksModel {
                         id: tasksModel
                         filterByScreen: plasmoid.configuration.filterByScreen
-                        screenGeometry: plasmoid.screenGeometry
+                        screenGeometry: plasmoid.screenGeometry        
                     }
 
                     onDoubleClicked: {
-                        tasksModel.requestToggleMaximized(tasksModel.activeTask)
+                        if(plasmoid.configuration.toggleMaximizedOnDoubleClick){
+                            tasksModel.requestToggleMaximized(tasksModel.activeTask)
+                        }         
+                    }
+
+                    onWheel: {
+                        if(plasmoid.configuration.toggleMaximizedOnMouseWheel){
+                            var isMaximized = tasksModel.data(tasksModel.activeTask, TaskManager.AbstractTasksModel.IsMaximized)
+                            if (wheel.angleDelta.y > 0 && !isMaximized) {
+                                tasksModel.requestToggleMaximized(tasksModel.activeTask)           
+                            } else if(wheel.angleDelta.y < 0 && isMaximized){
+                                tasksModel.requestToggleMaximized(tasksModel.activeTask)
+                            }
+                        }       
                     }
                 }
             }
@@ -361,35 +435,21 @@ Item {
     AppMenuPrivate.AppMenuModel {
         id: appMenuModel
 
-        filterByActive: plasmoid.configuration.filterByActive && !selectedTracker
-        filterChildren: plasmoid.configuration.filterChildrenWindows && !selectedTracker
-        screenGeometry: plasmoid.configuration.filterByScreen && !selectedTracker ? plasmoid.screenGeometry : Qt.rect(-1, -1, 0, 0) //null geometry
+        filterByActive: plasmoid.configuration.filterByActive
+        filterChildren: plasmoid.configuration.filterChildrenWindows
+        screenGeometry: plasmoid.configuration.filterByScreen && !latteBridge ? plasmoid.screenGeometry : Qt.rect(-1, -1, 0, 0) //null geometry
         onRequestActivateIndex: plasmoid.nativeInterface.requestActivateIndex(index)
         Component.onCompleted: {
             plasmoid.nativeInterface.model = appMenuModel
         }
 
-        winId: selectedTracker && selectedTracker.lastActiveWindow.isValid ? selectedTracker.lastActiveWindow.winId : -1
+        winId: latteBridge && existsWindowShown ? lastActiveTaskItem.winId : -1
 
-        readonly property bool existsWindowActive: !selectedTracker
-                                                   || (selectedTracker && selectedTracker.lastActiveWindow.isValid && !selectedTracker.lastActiveWindow.isMinimized)
-        readonly property bool ignoreWindow: selectedTracker
-                                             && (!selectedTracker.lastActiveWindow.isValid
-                                                 || (plasmoid.configuration.filterByActive && !existsWindowActive))
+        readonly property bool ignoreWindow: {
+            var activeFilter = plasmoid.configuration.filterByActive ? !existsWindowActive || !existsWindowShown : false;
+            var maximizedFilter = plasmoid.configuration.filterByMaximized ?  !isLastActiveWindowMaximized : false;
 
-        // onWinIdChanged: console.log("In Latte with wid appmenu : "+winId);
-
-        readonly property QtObject windowsTracker:latteBridge
-                                                  && latteBridge.windowsTracker
-                                                  && latteBridge.windowsTracker.currentScreen.lastActiveWindow
-                                                  && latteBridge.windowsTracker.allScreens.lastActiveWindow ? latteBridge.windowsTracker : null
-
-        readonly property QtObject selectedTracker: {
-            if (windowsTracker) {
-                return plasmoid.configuration.filterByScreen ? windowsTracker.currentScreen : windowsTracker.allScreens;
-            }
-
-            return null;
+            return (activeFilter || maximizedFilter);
         }
     }
 

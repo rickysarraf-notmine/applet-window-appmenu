@@ -20,6 +20,8 @@
  */
 
 #include "appmenuapplet.h"
+#include <config-appmenu.h>
+
 #include "decorationpalette.h"
 #include "../plugin/appmenumodel.h"
 
@@ -44,9 +46,12 @@ QString viewService() { return QStringLiteral("org.kde.kappmenuview"); }
 AppMenuApplet::AppMenuApplet(QObject *parent, const QVariantList &data)
     : Plasma::Applet(parent, data)
 {
+#if LibTaskManager_CURRENTMINOR_VERSION < 19 /*5.19*/
+    // Disable for Plasma Desktop < 5.19
     if (KWindowSystem::isPlatformWayland()) {
         return;
     }
+#endif
 
     ++s_refs;
 
@@ -199,7 +204,61 @@ QMenu *AppMenuApplet::createMenu(int idx) const
 
 void AppMenuApplet::onMenuAboutToHide()
 {
+    m_menuVisible = false;
     setCurrentIndex(-1);
+
+    if (!m_currentMenu) {
+        return;
+    }
+
+    //! Workaround: Send a fake QEvent::Leave to inform grid buttons for mouse leaving the view.
+    //! This is needed because after triggering menus through hovering over them when the user clicks
+    //! far from menus, the menus deactivate but for some reason an Enter event is sent and for that
+    //! reason a button think that containsMouse. Without that workaround the experience
+    //! is a bit broken because there case that buttons appear hovered without really be hovered.
+    QHoverEvent e(QEvent::Leave, QPoint(-5,-5),  QPoint(2, 2));
+    QCoreApplication::instance()->sendEvent(m_currentMenu->windowHandle()->transientParent(), &e);
+}
+
+void AppMenuApplet::repositionMenu()
+{
+    if (!m_currentMenu) {
+        return;
+    }
+
+    QPoint pos = proposedPos(m_currentMenu, m_currentParentGeometry);
+    m_currentMenu->move(pos);
+}
+
+bool AppMenuApplet::menuIsShown() const
+{
+    return m_currentMenu && m_menuVisible;
+}
+
+QPoint AppMenuApplet::proposedPos(QMenu *menu, QRect parentGeometry)
+{
+    if (!menu) {
+        return QPoint();
+    }
+
+    QPoint result = parentGeometry.topLeft();
+    const auto &geo =  menu->windowHandle()->transientParent()->screen()->geometry();
+
+    if (location() == Plasma::Types::TopEdge) {
+        result.setY(result.y() + parentGeometry.height());
+    } else if (location() == Plasma::Types::BottomEdge) {
+        result.setY(result.y() - menu->windowHandle()->height());
+    } else if (location() == Plasma::Types::LeftEdge) {
+        result.setX(result.x() + parentGeometry.width());
+    } else {
+        //Right Edge
+        result.setX(result.x() - menu->windowHandle()->width());
+    }
+
+    result = QPoint(qBound(geo.x(), result.x(), geo.x() + geo.width() - menu->windowHandle()->width()),
+                    qBound(geo.y(), result.y(), geo.y() + geo.height() - menu->windowHandle()->height()));
+
+    return result;
 }
 
 void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
@@ -215,7 +274,6 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
     QMenu *actionMenu = createMenu(idx);
 
     if (actionMenu) {
-
         //this is a workaround where Qt will fail to realize a mouse has been released
         // this happens if a window which does not accept focus spawns a new window that takes focus and X grab
         // whilst the mouse is depressed
@@ -223,55 +281,71 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
         // this causes the next click to go missing
 
         //by releasing manually we avoid that situation
-        auto ungrabMouseHack = [ctx]() {
-            if (ctx && ctx->window() && ctx->window()->mouseGrabberItem()) {
-                // FIXME event forge thing enters press and hold move mode :/
-                ctx->window()->mouseGrabberItem()->ungrabMouse();
-            }
-        };
 
-        QTimer::singleShot(0, ctx, ungrabMouseHack);
+        if (KWindowSystem::isPlatformX11()) {
+            //! Under wayland is not needed
+            auto ungrabMouseHack = [ctx]() {
+                if (ctx && ctx->window() && ctx->window()->mouseGrabberItem()) {
+                    // FIXME event forge thing enters press and hold move mode :/
+                    ctx->window()->mouseGrabberItem()->ungrabMouse();
+                }
+            };
+
+            QTimer::singleShot(0, ctx, ungrabMouseHack);
+        }
         //end workaround
-
-        const auto &geo = ctx->window()->screen()->availableVirtualGeometry();
-
-        QPoint pos = ctx->window()->mapToGlobal(ctx->mapToScene(QPointF()).toPoint());
-
-        if (location() == Plasma::Types::TopEdge) {
-            pos.setY(pos.y() + ctx->height());
-        }
-
-        actionMenu->adjustSize();
-
-        pos = QPoint(qBound(geo.x(), pos.x(), geo.x() + geo.width() - actionMenu->width()),
-                     qBound(geo.y(), pos.y(), geo.y() + geo.height() - actionMenu->height()));
-
-        if (view() == FullView) {
-            actionMenu->installEventFilter(this);
-        }
-
-        actionMenu->winId();//create window handle
-        actionMenu->windowHandle()->setTransientParent(ctx->window());
-
-        actionMenu->popup(pos);
 
         if (view() == FullView) {
             // hide the old menu only after showing the new one to avoid brief flickering
             // in other windows as they briefly re-gain focus
             QMenu *oldMenu = m_currentMenu;
-            m_currentMenu = actionMenu;
 
             if (oldMenu && oldMenu != actionMenu) {
                 //don't initialize the currentIndex when another menu is already shown
                 disconnect(oldMenu, &QMenu::aboutToHide, this, &AppMenuApplet::onMenuAboutToHide);
+                disconnect(oldMenu->windowHandle(), &QWindow::widthChanged, this, &AppMenuApplet::repositionMenu);
+                disconnect(oldMenu->windowHandle(), &QWindow::heightChanged, this, &AppMenuApplet::repositionMenu);
+                disconnect(oldMenu, &QObject::destroyed, this, &AppMenuApplet::menuIsShownChanged);
                 oldMenu->hide();
             }
         }
 
+        QPoint pos = ctx->window()->mapToGlobal(ctx->mapToScene(QPointF()).toPoint());
+        m_currentParentGeometry = QRect(pos, QSize(ctx->width(), ctx->height()));
+        m_currentMenu = actionMenu;
+
+        //! Hiding the old menu before showing the new one is needed by wayland.
+        //! Without that code reordering half of menus in wayland are not shown
+        //! at all and wayland is complaining
+        actionMenu->winId();//create window handle
+        actionMenu->windowHandle()->setTransientParent(ctx->window());
+        pos = proposedPos(actionMenu, m_currentParentGeometry);
+
+        if (view() == FullView) {
+            actionMenu->installEventFilter(this);
+        }
+
         setCurrentIndex(idx);
+        m_menuVisible = true;
 
         // FIXME TODO connect only once
         connect(actionMenu, &QMenu::aboutToHide, this, &AppMenuApplet::onMenuAboutToHide, Qt::UniqueConnection);
+
+        if (location() == Plasma::Types::BottomEdge) {
+            //! menu width is used in menu position only for bottom edge
+            //! this is needed because menu width on first showing is not the last presented to the user and this is
+            //! why menus look out of place otherwise
+            connect(actionMenu->windowHandle(), &QWindow::heightChanged, this, &AppMenuApplet::repositionMenu);
+        } else if (location() == Plasma::Types::RightEdge) {
+            //! menu height is used in menu position only for right edge
+            //! this is needed because menu width on first showing is not the last presented to the user and this is
+            //! why menus look out of place otherwise
+            connect(actionMenu->windowHandle(), &QWindow::widthChanged, this, &AppMenuApplet::repositionMenu);
+        }
+
+        actionMenu->popup(pos);
+
+        emit menuIsShownChanged();
     } else { // is it just an action without a menu?
         const QVariant data = m_model->index(idx, 0).data(AppMenuModel::ActionRole);
         QAction *action = static_cast<QAction *>(data.value<void *>());
@@ -311,29 +385,31 @@ bool AppMenuApplet::eventFilter(QObject *watched, QEvent *event)
         }
 
     } else if (event->type() == QEvent::MouseMove) {
-        auto *e = static_cast<QMouseEvent *>(event);
+        if (KWindowSystem::isPlatformX11()) {
+            auto *e = static_cast<QMouseEvent *>(event);
 
-        if (!m_buttonGrid || !m_buttonGrid->window()) {
-            return false;
+            if (!m_buttonGrid || !m_buttonGrid->window()) {
+                return false;
+            }
+
+            // FIXME the panel margin breaks Fitt's law :(
+            const QPointF &windowLocalPos = m_buttonGrid->window()->mapFromGlobal(e->globalPos());
+            const QPointF &buttonGridLocalPos = m_buttonGrid->mapFromScene(windowLocalPos);
+            auto *item = m_buttonGrid->childAt(buttonGridLocalPos.x(), buttonGridLocalPos.y());
+
+            if (!item) {
+                return false;
+            }
+
+            bool ok;
+            const int buttonIndex = item->property("buttonIndex").toInt(&ok);
+
+            if (!ok) {
+                return false;
+            }
+
+            emit requestActivateIndex(buttonIndex);
         }
-
-        // FIXME the panel margin breaks Fitt's law :(
-        const QPointF &windowLocalPos = m_buttonGrid->window()->mapFromGlobal(e->globalPos());
-        const QPointF &buttonGridLocalPos = m_buttonGrid->mapFromScene(windowLocalPos);
-        auto *item = m_buttonGrid->childAt(buttonGridLocalPos.x(), buttonGridLocalPos.y());
-
-        if (!item) {
-            return false;
-        }
-
-        bool ok;
-        const int buttonIndex = item->property("buttonIndex").toInt(&ok);
-
-        if (!ok) {
-            return false;
-        }
-
-        emit requestActivateIndex(buttonIndex);
     } else if (event->type() == QEvent::Leave) {
         if (!m_buttonGrid || !m_buttonGrid->window()) {
             return false;

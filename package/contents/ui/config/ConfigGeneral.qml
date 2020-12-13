@@ -33,12 +33,14 @@ Item {
     property alias cfg_compactView: compactViewRadioButton.checked
     property alias cfg_fillWidth: fillWidthChk.checked
     property alias cfg_filterByActive: activeChk.checked
+    property alias cfg_filterByMaximized: maximizedChk.checked
     property alias cfg_filterChildrenWindows: childrenChk.checked
     property alias cfg_filterByScreen: screenAwareChk.checked
     property alias cfg_selectedScheme: configGeneral.selectedScheme
     property alias cfg_spacing: spacingSlider.value
     property alias cfg_showWindowTitleOnMouseExit: showWindowTitleChk.checked
     property alias cfg_toggleMaximizedOnDoubleClick: toggleMaximizedChk.checked
+    property alias cfg_toggleMaximizedOnMouseWheel: toggleMouseWheelMaximizedChk.checked
 
     property bool disableSetting: plasmoid.formFactor === PlasmaCore.Types.Vertical
 
@@ -178,6 +180,18 @@ Item {
                 visible: plasmoid.configuration.containmentType !== 2 /*non-Latte Containment*/
                 enabled: fillWidthChk.checked
             }
+
+            Controls.Label {
+                text: ""
+                visible: toggleMouseWheelMaximizedChk.visible
+            }
+
+            Controls.CheckBox {
+                id: toggleMouseWheelMaximizedChk
+                text: i18n("Maximize/restore active window on mouse wheel up/down")
+                visible: plasmoid.configuration.containmentType !== 2 /*non-Latte Containment*/
+                enabled: fillWidthChk.checked
+            }
         }
 
         GridLayout{
@@ -206,6 +220,13 @@ Item {
             Controls.CheckBox {
                 id: childrenChk
                 text: i18n("Show only menus from main window")
+            }
+
+            Controls.Label{}
+
+            Controls.CheckBox {
+                id: maximizedChk
+                text: i18n("Show only menus from maximized windows")
             }
         }
 
