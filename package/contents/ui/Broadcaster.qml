@@ -24,8 +24,10 @@ Item{
 
     property bool hiddenFromBroadcast: false
 
+    readonly property bool showWindowTitle: plasmoid.configuration.showWindowTitleOnMouseExit
+
     readonly property bool showWindowTitleEnabled: plasmoid.configuration.showWindowTitleOnMouseExit && !inEditMode
-    readonly property bool menuIsPresent: appMenuModel.visible && appMenuModel.menuAvailable
+    readonly property bool menuIsPresent: appMenuModel.visible && appMenuModel.menuAvailable && !appMenuModel.ignoreWindow
     readonly property bool isActive: plasmoid.configuration.windowTitleIsPresent && showWindowTitleEnabled
     property bool windowTitleRequestsCooperation: false
 
@@ -43,6 +45,16 @@ Item{
         }
     }
 
+    function sendValidVisibility() {
+        if (!buttonGrid.containsMouse && !keystateSource.modifierIsPressed) {
+            broadcaster.hiddenFromBroadcast = true;
+            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setVisible", true);
+        } else {
+            broadcaster.hiddenFromBroadcast = false;
+            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setVisible", false);
+        }
+    }
+
     Component.onDestruction: {
         if (latteBridge) {
             latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setCooperation", false);
@@ -52,6 +64,14 @@ Item{
     onIsActiveChanged: {
         if (latteBridge) {
             latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setCooperation", isActive);
+        }
+    }
+
+    onHiddenFromBroadcastChanged: {
+        if (!hiddenFromBroadcast) {
+            //! This way we make sure that if the mouse enters very fast the window title and appmenu showing is triggered
+            //! and the mouse is not inside appmenu when it become visible then window tile must return its visibility
+            validateFirstShowTimer.start();
         }
     }
 
@@ -65,6 +85,13 @@ Item{
         broadcaster.hiddenFromBroadcast = cooperationEstablished;
     }
 
+    onShowWindowTitleChanged: {
+        if (showWindowTitle && inEditMode) {
+            //!when the user chooses to enable cooperation in config window
+            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "activateWindowTitleCooperationFromEditMode", true);
+        }
+    }
+
     Connections {
         target: latteBridge
         onBroadcasted: {
@@ -75,6 +102,8 @@ Item{
                 latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "isPresent", true);
             } else if (action === "setCooperation") {
                 broadcaster.windowTitleRequestsCooperation = value;
+            } else if (action === "activateAppMenuCooperationFromEditMode") {
+                plasmoid.configuration.showWindowTitleOnMouseExit = true;
             }
         }
     }
@@ -92,19 +121,35 @@ Item{
         }
     }
 
+    Connections {
+        target: keystateSource
+        onModifierIsPressedChanged: {
+            if (broadcaster.cooperationEstablished) {
+                sendValidVisibility();
+            }
+        }
+    }
+
     Timer{
         id: broadcasterDelayer
         interval: 5
         onTriggered: {
             if (cooperationEstablished) {
-                if (!buttonGrid.containsMouse) {
-                    broadcaster.hiddenFromBroadcast = true;
-                    latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setVisible", true);
-                } else {
-                    broadcaster.hiddenFromBroadcast = false;
-                    latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setVisible", false);
-                }
+                sendValidVisibility();
+            }
+        }
+    }    
+
+    //! This way we make sure that if the mouse enters very fast the window title and appmenu showing is triggered
+    //! and the mouse is not inside appmenu when it become visible then window tile must return its visibility
+    Timer{
+        id: validateFirstShowTimer
+        interval: 150
+        onTriggered: {
+            if (cooperationEstablished) {
+                sendValidVisibility();
             }
         }
     }
+
 }
