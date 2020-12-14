@@ -2,7 +2,7 @@ Source: applet-window-appmenu
 Section: kde
 Priority: optional
 Maintainer: Ritesh Raj Sarraf <rrs@debian.org>
-Build-Depends: cmake, debhelper (>=11~), qtdeclarative5-dev, libkf5plasma-dev, libqt5x11extras5-dev, libsm-dev, libxcb-randr0-dev, libkf5configwidgets-dev, libkdecorations2-dev
+Build-Depends: cmake, debhelper (>=11~), qtdeclarative5-dev, libkf5plasma-dev, libqt5x11extras5-dev, libsm-dev, libxcb-randr0-dev, libkf5configwidgets-dev, libkdecorations2-dev, libkf5wayland-dev, plasma-workspace-dev
 Standards-Version: 4.1.4
 Homepage: <insert the upstream URL, if relevant>
 
