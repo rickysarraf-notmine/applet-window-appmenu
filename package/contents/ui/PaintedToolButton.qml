@@ -76,6 +76,9 @@ Item {
     }
 
     property int screenEdgeMargin: 0
+    property int thicknessPadding: 1
+
+    readonly property int edge: screenEdgeMargin + thicknessPadding
 
     signal clicked;
     signal scrolledUp(int step);
@@ -93,7 +96,7 @@ Item {
         height: plasmoid.formFactor === PlasmaCore.Types.Horizontal ? thickness : length
 
         readonly property int length: plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.width : parent.height
-        readonly property int thickness: (plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : parent.width) - screenEdgeMargin
+        readonly property int thickness: (plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : parent.width) - screenEdgeMargin - 2*thicknessPadding
 
         Rectangle {
             id: button
@@ -126,7 +129,6 @@ Item {
 
         Loader{
             id: itemLoader
-            anchors.centerIn: parent
             anchors.fill: parent
 
             active: buttonItem.text !== "" || buttonItem.icon !== ""
@@ -140,11 +142,11 @@ Item {
                 when: (plasmoid.location === PlasmaCore.Types.TopEdge)
                 AnchorChanges {
                     target: edgeRelevantLocatedItem
-                    anchors{top:parent.top; bottom:undefined; left:undefined; right:undefined}
+                    anchors{top:parent.top; bottom:undefined; left:parent.left; right:undefined;}
                 }
                 PropertyChanges{
                     target: edgeRelevantLocatedItem
-                    anchors{leftMargin:0; rightMargin:0; topMargin:buttonItem.screenEdgeMargin; bottomMargin:0}
+                    anchors{leftMargin:0; rightMargin:0; topMargin:buttonItem.edge; bottomMargin:0}
                 }
             },
             ///Left
@@ -153,11 +155,11 @@ Item {
                 when: (plasmoid.location === PlasmaCore.Types.LeftEdge)
                 AnchorChanges {
                     target: edgeRelevantLocatedItem
-                    anchors{top:undefined; bottom:undefined; left:parent.left; right:undefined}
+                    anchors{top:parent.top; bottom:undefined; left:parent.left; right:undefined}
                 }
                 PropertyChanges{
                     target: edgeRelevantLocatedItem
-                    anchors{leftMargin:buttonItem.screenEdgeMargin; rightMargin:0; topMargin:0; bottomMargin:0}
+                    anchors{leftMargin:buttonItem.edge; rightMargin:0; topMargin:0; bottomMargin:0}
                 }
             },
             ///Right
@@ -166,11 +168,11 @@ Item {
                 when: (plasmoid.location === PlasmaCore.Types.RightEdge)
                 AnchorChanges {
                     target: edgeRelevantLocatedItem
-                    anchors{top:undefined; bottom:undefined; left:undefined; right:parent.right}
+                    anchors{top:parent.top; bottom:undefined; left:undefined; right:parent.right}
                 }
                 PropertyChanges{
                     target: edgeRelevantLocatedItem
-                    anchors{leftMargin:0; rightMargin:buttonItem.screenEdgeMargin; topMargin:0; bottomMargin:0}
+                    anchors{leftMargin:0; rightMargin:buttonItem.edge; topMargin:0; bottomMargin:0}
                 }
             },
             ///Default-Bottom
@@ -178,11 +180,11 @@ Item {
                 name: "defaultbottom"
                 AnchorChanges {
                     target: edgeRelevantLocatedItem
-                    anchors{top:undefined; bottom:parent.bottom; left:undefined; right:undefined}
+                    anchors{top:undefined; bottom:parent.bottom; left:parent.left; right:undefined}
                 }
                 PropertyChanges{
                     target: edgeRelevantLocatedItem
-                    anchors{leftMargin:0; rightMargin:0; topMargin:0; bottomMargin:buttonItem.screenEdgeMargin}
+                    anchors{leftMargin:0; rightMargin:0; topMargin:0; bottomMargin:buttonItem.edge}
                 }
             }
         ]
@@ -276,8 +278,9 @@ Item {
     Component{
         id: iconComponent
         PlasmaCore.IconItem{
-            Layout.fillWidth: root.vertical
-            Layout.fillHeight: !root.vertical
+            anchors.centerIn: parent
+            width: edgeRelevantLocatedItem.thickness
+            height: edgeRelevantLocatedItem.thickness
             enabled:  menuAvailable
             source: buttonItem.icon
 

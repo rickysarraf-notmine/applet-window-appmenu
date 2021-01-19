@@ -19,6 +19,9 @@
 
 import QtQuick 2.7
 
+import org.kde.plasma.plasmoid 2.0
+import org.kde.plasma.core 2.0 as PlasmaCore
+
 Item{
     id: broadcaster
 
@@ -28,10 +31,13 @@ Item{
 
     readonly property bool showWindowTitleEnabled: plasmoid.configuration.showWindowTitleOnMouseExit && !inEditMode
     readonly property bool menuIsPresent: appMenuModel.visible && appMenuModel.menuAvailable && !appMenuModel.ignoreWindow
-    readonly property bool isActive: plasmoid.configuration.windowTitleIsPresent && showWindowTitleEnabled
-    property bool windowTitleRequestsCooperation: false
+    readonly property bool isActive: plasmoid.configuration.windowTitleIsPresent && showWindowTitleEnabled && plasmoid.formFactor === PlasmaCore.Types.Horizontal
+    property var windowTitlesRequestCooperation: []
+    property int windowTitlesRequestCooperationCount: 0
 
-    readonly property bool cooperationEstablished: windowTitleRequestsCooperation && isActive
+    readonly property bool cooperationEstablished: windowTitlesRequestCooperationCount > 0 && isActive
+
+    readonly property int sendActivateWindowTitleCooperationFromEditMode: plasmoid.configuration.sendActivateWindowTitleCooperationFromEditMode
 
     function sendMessage() {
         if (cooperationEstablished) {
@@ -55,16 +61,14 @@ Item{
         }
     }
 
-    Component.onDestruction: {
-        if (latteBridge) {
-            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setCooperation", false);
-        }
-    }
+    Component.onDestruction: broadcoastCooperationRequest(false)
 
     onIsActiveChanged: {
-        if (latteBridge) {
-            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setCooperation", isActive);
+        if (!isActive) {
+            hiddenFromBroadcast = false;
         }
+
+        broadcoastCooperationRequest(isActive)
     }
 
     onHiddenFromBroadcastChanged: {
@@ -85,25 +89,59 @@ Item{
         broadcaster.hiddenFromBroadcast = cooperationEstablished;
     }
 
-    onShowWindowTitleChanged: {
-        if (showWindowTitle && inEditMode) {
-            //!when the user chooses to enable cooperation in config window
-            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "activateWindowTitleCooperationFromEditMode", true);
+    onSendActivateWindowTitleCooperationFromEditModeChanged: {
+        if (plasmoid.configuration.sendActivateWindowTitleCooperationFromEditMode >= 0) {
+            var values = {
+                appletId: plasmoid.id,
+                cooperation: plasmoid.configuration.sendActivateWindowTitleCooperationFromEditMode
+            };
+
+            latteBridge.actions.broadcastToApplet("org.kde.windowtitle",
+                                                  "activateWindowTitleCooperationFromEditMode",
+                                                  values);
+
+            releaseSendActivateWindowTitleCooperation.start();
+        }
+    }
+
+    function broadcoastCooperationRequest(enabled) {
+        if (latteBridge) {
+            var values = {
+                appletId: plasmoid.id,
+                cooperation: enabled
+            };
+            latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "setCooperation", values);
         }
     }
 
     Connections {
         target: latteBridge
         onBroadcasted: {
+            var updateWindowTitleCooperations = false;
+
             if (cooperationEstablished && action === "setVisible") {
                 broadcaster.hiddenFromBroadcast = !value;
             } else if (action === "isPresent") {
                 plasmoid.configuration.windowTitleIsPresent = true;
                 latteBridge.actions.broadcastToApplet("org.kde.windowtitle", "isPresent", true);
             } else if (action === "setCooperation") {
-                broadcaster.windowTitleRequestsCooperation = value;
+                updateWindowTitleCooperations = true;
             } else if (action === "activateAppMenuCooperationFromEditMode") {
-                plasmoid.configuration.showWindowTitleOnMouseExit = true;
+                plasmoid.configuration.showWindowTitleOnMouseExit = value.cooperation;
+                updateWindowTitleCooperations = true;
+            }
+
+            if (updateWindowTitleCooperations) {
+                var indexed = broadcaster.windowTitlesRequestCooperation.indexOf(value.appletId);
+                var isFiled = (indexed >= 0);
+
+                if (value.cooperation && !isFiled) {
+                    broadcaster.windowTitlesRequestCooperation.push(value.appletId);
+                    broadcaster.windowTitlesRequestCooperationCount++;
+                } else if (!value.cooperation && isFiled) {
+                    broadcaster.windowTitlesRequestCooperation.splice(indexed, 1);
+                    broadcaster.windowTitlesRequestCooperationCount--;
+                }
             }
         }
     }
@@ -139,6 +177,12 @@ Item{
             }
         }
     }    
+
+    Timer {
+        id: releaseSendActivateWindowTitleCooperation
+        interval: 5
+        onTriggered: plasmoid.configuration.sendActivateWindowTitleCooperationFromEditMode = -1;
+    }
 
     //! This way we make sure that if the mouse enters very fast the window title and appmenu showing is triggered
     //! and the mouse is not inside appmenu when it become visible then window tile must return its visibility

@@ -49,12 +49,12 @@ Item {
     Plasmoid.status: inFullView ? fullLayout.status : compactLayout.status
 
     //BEGIN Layout properties
-    Layout.fillWidth: inFullView && plasmoid.configuration.fillWidth ? true : root.vertical
+    Layout.fillWidth: inFullView && plasmoid.configuration.fillWidth && !(inLatte && inEditMode) ? true : root.vertical
     Layout.fillHeight: inFullView ? true : !root.vertical
     Layout.minimumWidth: {
         if (inFullView) {
             if (plasmoid.configuration.fillWidth && !inEditMode) {
-                return -1;
+                return inLatte ? -1 : buttonGrid.width;
             }
 
             return inEditMode ? buttonGrid.width : 0
@@ -66,7 +66,7 @@ Item {
     Layout.preferredWidth: {
         if (inFullView) {
             if (plasmoid.configuration.fillWidth && !inEditMode) {
-                return -1;
+                return inLatte ? -1 : buttonGrid.width;
             }
 
             return buttonGrid.width;
@@ -82,6 +82,11 @@ Item {
             return -1;
         }
     }
+
+    Layout.minimumHeight: 0
+    Layout.preferredHeight: -1
+    Layout.maximumHeight: Infinity
+
     //END Layout properties
 
     //BEGIN Latte Dock Communicator
@@ -101,10 +106,12 @@ Item {
         }
     }
 
+    readonly property bool inLatte: latteBridge
     readonly property bool latteInEditMode: latteBridge && latteBridge.inEditMode
     readonly property bool enforceLattePalette: latteBridge && latteBridge.applyPalette && latteBridge.palette
 
     readonly property int screenEdgeMargin: latteBridge && latteBridge.hasOwnProperty("screenEdgeMargin") ? latteBridge.screenEdgeMargin : 0
+    readonly property int thicknessPadding: latteBridge && latteBridge.hasOwnProperty("thicknessPadding") ? latteBridge.thicknessPadding : 1
 
     Broadcaster {
         id: broadcaster
@@ -204,13 +211,14 @@ Item {
             if (root.currentScheme === "_current_") {
                 if (latteSupportsActiveWindowSchemes) {
                     /* colorScheme value was added after Latte v0.9.4*/
-                    return appMenuModel.selectedTracker.lastActiveWindow.colorScheme
+                    return lastActiveTaskItem && lastActiveTaskItem.hasOwnProperty("selectedTracker") ?
+                                lastActiveTaskItem.selectedTracker.colorScheme : "";
                 } else {
                     return "";
                 }
             }
 
-            return plasmoid.configuration.selectedScheme
+            return plasmoid.configuration.selectedScheme;
         }
     }
 
@@ -220,6 +228,7 @@ Item {
         enabled: menuAvailable
         visible: inCompactView
         screenEdgeMargin: root.screenEdgeMargin
+        thicknessPadding: root.thicknessPadding
 
         buttonIndex: 0
         icon: "application-menu"
@@ -235,7 +244,7 @@ Item {
                 return PlasmaCore.Types.NeedsAttentionStatus;
             } else if (menuAvailable && appMenuModel.visible){
                 return PlasmaCore.Types.ActiveStatus
-            } else if (!inEditMode) {
+            } else if (!inEditMode && !vertical) {
                 return PlasmaCore.Types.HiddenStatus;
             }
 
@@ -337,17 +346,29 @@ Item {
                     return false;
                 }
 
+                CustomLabel {
+                    id: plasmoidTitleLbl
+                    Layout.minimumWidth: implicitWidth
+                    Layout.preferredWidth: Layout.minimumWidth
+
+                    Layout.minimumHeight: fullLayout.height
+                    Layout.preferredHeight: Layout.minimumHeight
+
+                    visible: inEditMode && (buttonRepeater.model === null)
+                    text: plasmoid.title
+
+                    screenEdgeMargin: root.screenEdgeMargin
+                    thicknessPadding: root.thicknessPadding
+                }
+
                 Repeater {
                     id: buttonRepeater
                     model: {
                         if (appMenuModel.visible
                                    && appMenuModel.menuAvailable
                                    && !appMenuModel.ignoreWindow
-                                   && !broadcaster.hiddenFromBroadcast
-                                   && !(inEditMode && !appMenuModel.selectedTracker)) {
+                                   && !broadcaster.hiddenFromBroadcast) {
                             return appMenuModel;
-                        } else if (inEditMode) {
-                            return editModeModel;
                         }
 
                         return null;
@@ -366,6 +387,7 @@ Item {
 
                         buttonIndex: index
                         screenEdgeMargin: root.screenEdgeMargin
+                        thicknessPadding: root.thicknessPadding
                         text: activeMenu                        
 
                         onClicked: {
@@ -443,30 +465,13 @@ Item {
             plasmoid.nativeInterface.model = appMenuModel
         }
 
-        winId: latteBridge && existsWindowShown ? lastActiveTaskItem.winId : -1
+        winId: latteBridge && existsWindowShown && lastActiveTaskItem ? lastActiveTaskItem.winId : -1
 
         readonly property bool ignoreWindow: {
             var activeFilter = plasmoid.configuration.filterByActive ? !existsWindowActive || !existsWindowShown : false;
             var maximizedFilter = plasmoid.configuration.filterByMaximized ?  !isLastActiveWindowMaximized : false;
 
             return (activeFilter || maximizedFilter);
-        }
-    }
-
-
-    //! Example model in order to be used in edit mode when there is no
-    //! other menu available
-    ListModel {
-        id: editModeModel
-
-        ListElement {
-            activeMenu: "File"
-        }
-        ListElement {
-            activeMenu: "Edit"
-        }
-        ListElement {
-            activeMenu: "Help"
         }
     }
 
