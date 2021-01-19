@@ -1,7 +1,8 @@
-applet-window-appmenu (0.6.0+git0.1ab27f9d-1) UNRELEASED; urgency=medium
+applet-window-appmenu (0.6.0+git1.27df216f-1) UNRELEASED; urgency=medium
 
   * Initial release. Closes: #nnnn
     <nnnn is the bug number of your ITP>
   * New upstream version 0.6.0+git0.1ab27f9d
+  * New upstream version 0.6.0+git1.27df216f
 
- -- Ritesh Raj Sarraf <rrs@debian.org>  Sun, 13 Dec 2020 21:17:12 +0530
+ -- Ritesh Raj Sarraf <rrs@debian.org>  Tue, 19 Jan 2021 14:14:44 +0530
