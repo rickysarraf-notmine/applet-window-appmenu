@@ -1,4 +1,4 @@
-applet-window-appmenu (0.6.0+git2.d77d0387-1) UNRELEASED; urgency=medium
+applet-window-appmenu (0.6.0+git2.d77d0387-1) norbert; urgency=medium
 
   * Initial release. Closes: #nnnn
     <nnnn is the bug number of your ITP>
