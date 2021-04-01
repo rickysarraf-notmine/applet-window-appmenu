@@ -178,6 +178,9 @@ Item {
             ///Default-Bottom
             State {
                 name: "defaultbottom"
+                when: (plasmoid.location !== PlasmaCore.Types.TopEdge)
+                      && (plasmoid.location !== PlasmaCore.Types.LeftEdge)
+                      && (plasmoid.location !== PlasmaCore.Types.RightEdge)
                 AnchorChanges {
                     target: edgeRelevantLocatedItem
                     anchors{top:undefined; bottom:parent.bottom; left:parent.left; right:undefined}
@@ -281,7 +284,7 @@ Item {
             anchors.centerIn: parent
             width: edgeRelevantLocatedItem.thickness
             height: edgeRelevantLocatedItem.thickness
-            enabled:  menuAvailable
+            enabled:  buttonItem.enabled
             source: buttonItem.icon
 
             layer.enabled: enforceLattePalette
