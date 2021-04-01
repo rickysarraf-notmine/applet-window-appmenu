@@ -43,6 +43,8 @@ Item {
     readonly property bool inFullView: !plasmoid.configuration.compactView && plasmoid.formFactor === PlasmaCore.Types.Horizontal
     readonly property bool inCompactView: !inFullView
 
+    readonly property bool isMenuAccepted: appMenuModel.visible && appMenuModel.menuAvailable && !appMenuModel.ignoreWindow
+
     readonly property string currentScheme: plasmoid.configuration.selectedScheme
 
     Plasmoid.preferredRepresentation: plasmoid.fullRepresentation
@@ -71,7 +73,8 @@ Item {
 
             return buttonGrid.width;
         } else {
-            return Math.max(compactLayout.implicitWidth, root.height);
+            //! compact scenario
+            return !vertical ? compactLayout.implicitWidth : root.width; //Math.max(compactLayout.implicitWidth, root.height);
         }
     }
 
@@ -84,7 +87,14 @@ Item {
     }
 
     Layout.minimumHeight: 0
-    Layout.preferredHeight: -1
+    Layout.preferredHeight: {
+        if (inFullView) {
+            return -1;
+        } else {
+            //! compact scenario
+            return vertical ? compactLayout.implicitHeight : root.width;
+        }
+    }
     Layout.maximumHeight: Infinity
 
     //END Layout properties
@@ -225,7 +235,7 @@ Item {
     PaintedToolButton {
         id: compactLayout
         anchors.fill: parent
-        enabled: menuAvailable
+        enabled: root.isMenuAccepted
         visible: inCompactView
         screenEdgeMargin: root.screenEdgeMargin
         thicknessPadding: root.thicknessPadding
@@ -244,11 +254,9 @@ Item {
                 return PlasmaCore.Types.NeedsAttentionStatus;
             } else if (menuAvailable && appMenuModel.visible){
                 return PlasmaCore.Types.ActiveStatus
-            } else if (!inEditMode && !vertical) {
-                return PlasmaCore.Types.HiddenStatus;
+            } else {
+                return PlasmaCore.Types.PassiveStatus;
             }
-
-            return PlasmaCore.Types.PassiveStatus;
         }
     }
 
@@ -364,10 +372,7 @@ Item {
                 Repeater {
                     id: buttonRepeater
                     model: {
-                        if (appMenuModel.visible
-                                   && appMenuModel.menuAvailable
-                                   && !appMenuModel.ignoreWindow
-                                   && !broadcaster.hiddenFromBroadcast) {
+                        if (root.isMenuAccepted && !broadcaster.hiddenFromBroadcast) {
                             return appMenuModel;
                         }
 
