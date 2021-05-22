@@ -63,7 +63,6 @@ Item {
         id:mainColumn
         spacing: units.largeSpacing
         width:parent.width - anchors.leftMargin * 2
-        height: plasmoid.configuration.containmentType === 2 ? parent.height : undefined
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.leftMargin: 2
@@ -204,47 +203,6 @@ Item {
             }
         }
 
-        GridLayout{
-            columns: 2
-
-            Controls.Label{
-                Layout.minimumWidth: Math.max(centerFactor * root.width, minimumWidth)
-                text: i18n("Filters:")
-                horizontalAlignment: Text.AlignRight
-            }
-
-            Controls.CheckBox {
-                id: screenAwareChk
-                text: i18n("Show only menus from current screen")
-            }
-
-            Controls.Label{}
-
-            Controls.CheckBox {
-                id: activeChk
-                text: i18n("Show only menus from active applications")
-            }
-
-            Controls.Label{}
-
-            Controls.CheckBox {
-                id: childrenChk
-                text: i18n("Show only menus from main window")
-            }
-
-            Controls.Label{}
-
-            Controls.CheckBox {
-                id: maximizedChk
-                text: i18n("Show only menus from maximized windows")
-            }
-        }
-
-        Item {
-            Layout.fillHeight: true
-            Layout.fillWidth: true
-        }
-
         Kirigami.InlineMessage {
             id: inlineMessage
             Layout.fillWidth: true
@@ -287,6 +245,47 @@ Item {
                     inlineMessage.visible = false;
                 }
             }
+        }
+
+        GridLayout{
+            columns: 2
+
+            Controls.Label{
+                Layout.minimumWidth: Math.max(centerFactor * root.width, minimumWidth)
+                text: i18n("Filters:")
+                horizontalAlignment: Text.AlignRight
+            }
+
+            Controls.CheckBox {
+                id: screenAwareChk
+                text: i18n("Show only menus from current screen")
+            }
+
+            Controls.Label{}
+
+            Controls.CheckBox {
+                id: activeChk
+                text: i18n("Show only menus from active applications")
+            }
+
+            Controls.Label{}
+
+            Controls.CheckBox {
+                id: childrenChk
+                text: i18n("Show only menus from main window")
+            }
+
+            Controls.Label{}
+
+            Controls.CheckBox {
+                id: maximizedChk
+                text: i18n("Show only menus from maximized windows")
+            }
+        }
+
+        Item {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
         }
     }
 }
