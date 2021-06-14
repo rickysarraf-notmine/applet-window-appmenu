@@ -1,3 +1,9 @@
+applet-window-appmenu (0.7.0-1) norbert; urgency=medium
+
+  * New upstream version 0.7.0
+
+ -- Ritesh Raj Sarraf <rrs@debian.org>  Mon, 14 Jun 2021 13:10:07 +0530
+
 applet-window-appmenu (0.6.0+git4.f8844211-1) norbert; urgency=medium
 
   * New upstream version 0.6.0+git4.f8844211
