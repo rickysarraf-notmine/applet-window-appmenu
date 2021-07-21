@@ -35,7 +35,7 @@ Item {
     readonly property int containmentType: plasmoid.configuration.containmentType
 
     readonly property bool vertical: plasmoid.formFactor === PlasmaCore.Types.Vertical
-    readonly property bool view: plasmoid.configuration.compactView
+    readonly property bool view: inCompactView
     readonly property bool inEditMode: plasmoid.userConfiguring || latteInEditMode
     readonly property bool menuAvailable: appMenuModel.menuAvailable
     readonly property bool kcmAuthorized: KCMShell.authorize(["style.desktop"]).length > 0
@@ -473,10 +473,11 @@ Item {
         winId: latteBridge && existsWindowShown && lastActiveTaskItem ? lastActiveTaskItem.winId : -1
 
         readonly property bool ignoreWindow: {
-            var activeFilter = plasmoid.configuration.filterByActive ? !existsWindowActive || !existsWindowShown : false;
-            var maximizedFilter = plasmoid.configuration.filterByMaximized ?  !isLastActiveWindowMaximized : false;
+            var shownFilter = !existsWindowShown;
+            var activeFilter = plasmoid.configuration.filterByActive ? !existsWindowActive : false;
+            var maximizedFilter = plasmoid.configuration.filterByMaximized ? !isLastActiveWindowMaximized : false;
 
-            return (activeFilter || maximizedFilter);
+            return (shownFilter || activeFilter || maximizedFilter);
         }
     }
 
