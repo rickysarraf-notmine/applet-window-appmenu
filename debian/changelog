@@ -1,3 +1,9 @@
+applet-window-appmenu (0.8.0-1) UNRELEASED; urgency=medium
+
+  * New upstream version 0.8.0
+
+ -- Ritesh Raj Sarraf <rrs@debian.org>  Mon, 30 May 2022 13:57:53 +0530
+
 applet-window-appmenu (0.7.1+git0.d440d247-1) norbert; urgency=medium
 
   * New upstream version 0.7.1+git0.d440d247
