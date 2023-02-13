@@ -39,8 +39,12 @@
 #include <KWindowSystem>
 
 int AppMenuApplet::s_refs = 0;
-namespace {
-QString viewService() { return QStringLiteral("org.kde.kappmenuview"); }
+namespace
+{
+QString viewService()
+{
+    return QStringLiteral("org.kde.kappmenuview");
+}
 }
 
 AppMenuApplet::AppMenuApplet(QObject *parent, const QVariantList &data)
@@ -148,7 +152,7 @@ void AppMenuApplet::setMenuColorScheme(const QString &scheme)
 
     if (!m_menuColorScheme.isEmpty()) {
         m_decorationPalette->deleteLater();
-        m_decorationPalette = new DecorationPalette(scheme);\
+        m_decorationPalette = new DecorationPalette(scheme);
     } else {
         m_decorationPalette->deleteLater();
     }
@@ -175,21 +179,14 @@ QMenu *AppMenuApplet::createMenu(int idx) const
     QAction *action = nullptr;
 
     if (view() == CompactView) {
-        menu = new QMenu();
-
-        for (int i = 0; i < m_model->rowCount(); i++) {
-            const QModelIndex index = m_model->index(i, 0);
-            const QVariant data = m_model->data(index, AppMenuModel::ActionRole);
-            action = (QAction *)data.value<void *>();
-            menu->addAction(action);
+        auto menuAction = static_cast<QAction*>(m_model->data(QModelIndex(), AppMenuModel::ActionRole).value<void *>());
+        if (menuAction) {
+            menu = menuAction->menu();
         }
-
-        menu->setAttribute(Qt::WA_DeleteOnClose);
     } else if (view() == FullView) {
         const QModelIndex index = m_model->index(idx, 0);
         const QVariant data = m_model->data(index, AppMenuModel::ActionRole);
         action = (QAction *)data.value<void *>();
-
         if (action) {
             menu = action->menu();
         }
@@ -290,17 +287,14 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
 
         //by releasing manually we avoid that situation
 
-        if (KWindowSystem::isPlatformX11()) {
-            //! Under wayland is not needed
-            auto ungrabMouseHack = [ctx]() {
-                if (ctx && ctx->window() && ctx->window()->mouseGrabberItem()) {
-                    // FIXME event forge thing enters press and hold move mode :/
-                    ctx->window()->mouseGrabberItem()->ungrabMouse();
-                }
-            };
+        auto ungrabMouseHack = [ctx]() {
+            if (ctx && ctx->window() && ctx->window()->mouseGrabberItem()) {
+                // FIXME event forge thing enters press and hold move mode :/
+                ctx->window()->mouseGrabberItem()->ungrabMouse();
+            }
+        };
 
-            QTimer::singleShot(0, ctx, ungrabMouseHack);
-        }
+        QTimer::singleShot(0, ctx, ungrabMouseHack);
         //end workaround
 
         QMenu *oldMenu = m_currentMenu;
@@ -311,19 +305,16 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
         bool firstmenuinitialization{m_currentMenu != actionMenu};
         m_currentMenu = actionMenu;
 
+        if (view() == FullView) {
+            actionMenu->installEventFilter(this);
+        }
+
         //! Hiding the old menu before showing the new one is needed by wayland.
         //! Without that code reordering half of menus in wayland are not shown
         //! at all and wayland is complaining
         actionMenu->winId();//create window handle
         actionMenu->windowHandle()->setTransientParent(ctx->window());
         pos = proposedPos(actionMenu, m_currentParentGeometry);
-
-        if (view() == FullView) {
-            actionMenu->installEventFilter(this);
-        }
-
-        setCurrentIndex(idx);
-        m_menuVisible = true;
 
         if (firstmenuinitialization) {
             connect(actionMenu, &QMenu::aboutToHide, this, &AppMenuApplet::onMenuAboutToHide, Qt::UniqueConnection);
@@ -332,7 +323,9 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
             connect(actionMenu->windowHandle(), &QWindow::widthChanged, this, &AppMenuApplet::repositionMenu);
         }
 
-        actionMenu->popup(pos);
+        if (KWindowSystem::isPlatformX11()) {
+            actionMenu->popup(pos);
+        }
 
         // hide the old menu only after showing the new one to avoid brief flickering
         // in other windows as they briefly re-gain focus
@@ -344,6 +337,13 @@ void AppMenuApplet::trigger(QQuickItem *ctx, int idx)
             disconnect(oldMenu, &QObject::destroyed, this, &AppMenuApplet::menuIsShownChanged);
             oldMenu->hide();
         }
+
+        if (KWindowSystem::isPlatformWayland()) {
+            actionMenu->popup(pos);
+        }
+
+        setCurrentIndex(idx);
+        m_menuVisible = true;
 
         emit menuIsShownChanged();
     } else { // is it just an action without a menu?
@@ -385,50 +385,48 @@ bool AppMenuApplet::eventFilter(QObject *watched, QEvent *event)
         }
 
     } else if (event->type() == QEvent::MouseMove) {
-        if (KWindowSystem::isPlatformX11()) {
-            auto *e = static_cast<QMouseEvent *>(event);
+        auto *e = static_cast<QMouseEvent *>(event);
 
-            if (!m_buttonGrid || !m_buttonGrid->window()) {
-                return false;
-            }
-
-            // Support Fitt's Law and take care the panel margins
-            const QPointF &windowLocalPos = m_buttonGrid->window()->mapFromGlobal(e->globalPos());
-            QPointF buttonGridLocalPos = m_buttonGrid->mapFromScene(windowLocalPos);
-
-            // In Latte panel >= v0.10 we can access applets visual geometry
-            QVariant appletsVisualGeomVariant = m_buttonGrid->window() ? m_buttonGrid->window()->property("_applets_layout_geometry") : QVariant();
-            QRect windowVisualGeom = m_buttonGrid->window()->geometry();
-
-            if (appletsVisualGeomVariant.isValid()) {
-                QRect appletsVisualGeom = appletsVisualGeomVariant.toRect();
-                appletsVisualGeom.moveTopLeft(windowVisualGeom.topLeft());
-                windowVisualGeom = appletsVisualGeom;
-            }
-
-            if (inPanel() && windowVisualGeom.contains(e->globalPos()) && !m_buttonGrid->contains(buttonGridLocalPos)) {
-                if (formFactor() == Plasma::Types::Horizontal) {
-                    buttonGridLocalPos.setY(1);
-                } else {
-                    buttonGridLocalPos.setX(1);
-                }
-            }
-
-            auto *item = m_buttonGrid->childAt(buttonGridLocalPos.x(), buttonGridLocalPos.y());
-
-            if (!item) {
-                return false;
-            }
-
-            bool ok;
-            const int buttonIndex = item->property("buttonIndex").toInt(&ok);
-
-            if (!ok) {
-                return false;
-            }
-
-            emit requestActivateIndex(buttonIndex);
+        if (!m_buttonGrid || !m_buttonGrid->window()) {
+            return false;
         }
+
+        // Support Fitt's Law and take care the panel margins
+        const QPointF &windowLocalPos = m_buttonGrid->window()->mapFromGlobal(e->globalPos());
+        QPointF buttonGridLocalPos = m_buttonGrid->mapFromScene(windowLocalPos);
+
+        // In Latte panel >= v0.10 we can access applets visual geometry
+        QVariant appletsVisualGeomVariant = m_buttonGrid->window() ? m_buttonGrid->window()->property("_applets_layout_geometry") : QVariant();
+        QRect windowVisualGeom = m_buttonGrid->window()->geometry();
+
+        if (appletsVisualGeomVariant.isValid()) {
+            QRect appletsVisualGeom = appletsVisualGeomVariant.toRect();
+            appletsVisualGeom.moveTopLeft(windowVisualGeom.topLeft());
+            windowVisualGeom = appletsVisualGeom;
+        }
+
+        if (inPanel() && windowVisualGeom.contains(e->globalPos()) && !m_buttonGrid->contains(buttonGridLocalPos)) {
+            if (formFactor() == Plasma::Types::Horizontal) {
+                buttonGridLocalPos.setY(1);
+            } else {
+                buttonGridLocalPos.setX(1);
+            }
+        }
+
+        auto *item = m_buttonGrid->childAt(buttonGridLocalPos.x(), buttonGridLocalPos.y());
+
+        if (!item) {
+            return false;
+        }
+
+        bool ok;
+        const int buttonIndex = item->property("buttonIndex").toInt(&ok);
+
+        if (!ok) {
+            return false;
+        }
+
+        emit requestActivateIndex(buttonIndex);
     } else if (event->type() == QEvent::Leave) {
         if (!m_buttonGrid || !m_buttonGrid->window()) {
             return false;
